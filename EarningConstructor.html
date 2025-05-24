@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Constructeur Earning.toml</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #191c22; color: #eee; }
+        h1, h2 { margin: 20px; }
+        .categories { display: flex; flex-wrap: wrap; margin: 0 20px; gap: 12px; }
+        .category-btn { background: #222; color: #bbb; padding: 10px 24px; border-radius: 8px; border: 1px solid #444; cursor: pointer; font-size: 18px; }
+        .category-btn.selected { background: #009688; color: #fff; }
+        .container { margin: 20px; max-width: 1000px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+        th, td { border-bottom: 1px solid #31343b; padding: 6px 8px; }
+        th { background: #23272e; }
+        tr.item-row { background: #23272e; transition: background 0.2s; }
+        tr.item-row:hover { background: #29313d; }
+        .expand-btn, .add-btn { background: none; border: none; color: #41d1ff; cursor: pointer; font-size: 18px; }
+        .add-btn { color: #30d963; font-size: 20px; margin-left: 10px; }
+        .json-details { background: #242832; padding: 10px 20px 16px; margin: 0 0 10px 0; border-radius: 6px; word-break: break-word; }
+        .form-row { margin-bottom: 7px; }
+        .form-label { display: inline-block; min-width: 90px; }
+        .json-param-list { background: #191c22; border-radius: 6px; padding: 12px 16px; margin: 10px 20px 30px; }
+        .json-param-list span { display: inline-block; margin-right: 24px; margin-bottom: 8px; }
+        .save-btn { margin: 18px 20px; background: #34e89e; color: #222; border: none; padding: 10px 30px; border-radius: 8px; font-size: 20px; cursor: pointer; font-weight: bold; }
+        .hidden { display: none; }
+        input[type="text"], input[type="number"] { width: 90px; border-radius: 4px; border: 1px solid #555; padding: 3px 7px; background: #222; color: #eee; }
+        input[type="checkbox"] { transform: scale(1.15); }
+        input[type="file"] { margin: 16px 20px; }
+        .delete-btn { background: none; color: #ff4a4a; border: none; cursor: pointer; font-size: 19px; margin-left: 12px; }
+    </style>
+</head>
+<body>
+    <h1>Constructeur Earning.toml</h1>
+    <input type="file" id="fileInput" accept=".toml,.txt">
+    <button class="save-btn" id="saveBtn" disabled>💾 Sauvegarder le fichier</button>
+    <div id="jsonParamDoc" class="json-param-list"></div>
+    <div class="categories" id="categories"></div>
+    <div class="container" id="itemsContainer"></div>
+    <a id="downloadLink" class="hidden">Download</a>
+
+<script>
+const jsonParamsDoc = {
+    "multiply":    { type: "float", description: "Multiplicateur de gain d'XP (ex: 1.0, 2.5)" },
+    "bonus":       { type: "int", description: "Bonus brut d'XP" },
+    "chance":      { type: "float", description: "Chance de trigger (%)" },
+    "message":     { type: "string", description: "Message personnalisé affiché au joueur" },
+    "tag":         { type: "string", description: "Tag ou catégorie d'item" },
+    "hidden":      { type: "boolean", description: "Item caché du joueur (debug/admin)" }
+};
+function displayJsonParamDoc() {
+    const docDiv = document.getElementById('jsonParamDoc');
+    docDiv.innerHTML = `<h2>Paramètres JSON possibles</h2>` +
+        Object.entries(jsonParamsDoc).map(([key, val]) =>
+            `<span><b>${key}</b> <i>(${val.type})</i> : ${val.description}</span>`
+        ).join("<br>");
+}
+displayJsonParamDoc();
+
+let originalToml = '';
+let categories = [];
+let dataByCategory = {}; // { category: [ {modid, id, xp, levelmin, levelmax, json, rawLine} ] }
+let currentCategory = '';
+// On ajoute une map pour stocker les commentaires par catégorie
+let commentsByCategory = {};
+
+/** Parsing TOML AVEC conservation des commentaires */
+function parseToml(text) {
+    originalToml = text;
+    dataByCategory = {};
+    categories = [];
+    commentsByCategory = {};
+    let lines = text.split(/\r?\n/);
+    let lastComments = [];
+    for (let i = 0; i < lines.length; ++i) {
+        let l = lines[i];
+        if (l.trim().startsWith("#")) {
+            lastComments.push(l);
+        } else {
+            // On cherche la ligne de catégorie
+            let m = l.match(/^\s*"([^"]+)"\s*=\s*"([^"]*)"/);
+            if (m) {
+                const cat = m[1];
+                const rawLine = m[2];
+                categories.push(cat);
+                dataByCategory[cat] = parseItems(rawLine);
+                // Associe les commentaires juste au-dessus à cette catégorie
+                commentsByCategory[cat] = lastComments.join("\n");
+                lastComments = [];
+            } else if (!l.trim() || l.trim() === "[Main]") {
+                lastComments = []; // Ne pas coller des vieux commentaires inutiles
+            }
+        }
+    }
+}
+
+function parseItems(line) {
+    if (!line.trim()) return [];
+    const items = line.split(";").map(it => it.trim()).filter(Boolean);
+    return items.map(itemStr => {
+        let jsonStart = itemStr.indexOf("{");
+        let jsonEnd = itemStr.lastIndexOf("}");
+        let beforeJson = itemStr.substring(0, jsonStart);
+        let jsonRaw = itemStr.substring(jsonStart, jsonEnd + 1).replace(/\\"/g, '"');
+        let [modid, id, xp, levelmin, levelmax] = beforeJson.split(":");
+        let json = {};
+        try { json = JSON.parse(jsonRaw); } catch(e) { json = {}; }
+        return { modid, id, xp, levelmin, levelmax, json, jsonRaw, raw: itemStr };
+    });
+}
+function showCategories() {
+    const div = document.getElementById('categories');
+    div.innerHTML = categories.map(cat =>
+        `<button class="category-btn${cat === currentCategory ? " selected" : ""}" onclick="selectCategory('${cat.replace(/'/g,"\\'")}')">${cat}</button>`
+    ).join("")
+    + `<button class="add-btn" title="Ajouter un item" onclick="addItemToCategory()">&plus; Ajouter un item</button>`;
+}
+window.selectCategory = function(cat) {
+    currentCategory = cat;
+    showCategories();
+    showItems(cat);
+};
+
+function showItems(cat) {
+    if (!dataByCategory[cat]) dataByCategory[cat] = [];
+    const arr = dataByCategory[cat];
+    let html = `<h2>${cat}</h2><table>
+        <tr>
+            <th>modid</th><th>id</th><th>xp</th><th>levelmin</th><th>levelmax</th><th>Actions</th>
+        </tr>`;
+    arr.forEach((item, idx) => {
+        html += `
+        <tr class="item-row" id="row${idx}">
+            <td><input type="text" style="width:80px" value="${item.modid||""}" onchange="editItemMain(${idx},'modid',this.value)"></td>
+            <td><input type="text" style="width:70px" value="${item.id||""}" onchange="editItemMain(${idx},'id',this.value)"></td>
+            <td><input type="number" style="width:55px" value="${item.xp||""}" onchange="editItemMain(${idx},'xp',this.value)"></td>
+            <td><input type="number" style="width:55px" value="${item.levelmin||""}" onchange="editItemMain(${idx},'levelmin',this.value)"></td>
+            <td><input type="number" style="width:55px" value="${item.levelmax||""}" onchange="editItemMain(${idx},'levelmax',this.value)"></td>
+            <td>
+                <button class="expand-btn" onclick="expandJson(${idx})">▼</button>
+                <button class="delete-btn" onclick="deleteItem(${idx})">🗑️</button>
+            </td>
+        </tr>
+        <tr id="jsonRow${idx}" class="hidden"><td colspan="6"><div class="json-details" id="jsonDetail${idx}"></div></td></tr>
+        `;
+    });
+    html += "</table>";
+    document.getElementById("itemsContainer").innerHTML = html;
+}
+window.editItemMain = function(idx, key, val) {
+    dataByCategory[currentCategory][idx][key] = val;
+};
+window.deleteItem = function(idx) {
+    if (confirm("Supprimer cet item ?")) {
+        dataByCategory[currentCategory].splice(idx, 1);
+        showItems(currentCategory);
+    }
+};
+
+window.expandJson = function(idx) {
+    let row = document.getElementById('jsonRow'+idx);
+    if (!row) return;
+    row.classList.toggle("hidden");
+    let item = dataByCategory[currentCategory][idx];
+
+    // Formulaire dynamique
+    let form = `<form id="jsonForm${idx}">`;
+    for (const [k, def] of Object.entries(jsonParamsDoc)) {
+        let v = item.json[k];
+        if (def.type === "boolean") {
+            form += `<div class="form-row">
+                <label class="form-label"><input type="checkbox" name="${k}" ${v===true?'checked':''}> ${k} <i>(bool)</i></label>
+            </div>`;
+        } else {
+            form += `<div class="form-row">
+                <label class="form-label" for="f_${k}">${k} <i>(${def.type})</i></label>
+                <input type="${def.type==='int'||def.type==='float'?'number':'text'}" 
+                    id="f_${k}" name="${k}" step="${def.type==='float'?'any':'1'}" value="${v !== undefined ? v : ''}">
+            </div>`;
+        }
+    }
+    form += `<button type="button" onclick="saveJsonParams(${idx})" style="margin-top:10px;font-size:16px;">Enregistrer</button>`;
+    form += `</form>`;
+
+    document.getElementById('jsonDetail'+idx).innerHTML = form;
+};
+window.saveJsonParams = function(idx) {
+    let item = dataByCategory[currentCategory][idx];
+    let form = document.getElementById('jsonForm'+idx);
+    let nv = {};
+    for (const [k, def] of Object.entries(jsonParamsDoc)) {
+        if (def.type === "boolean") {
+            if (form.elements[k].checked) nv[k] = true;
+        } else {
+            let v = form.elements[k].value;
+            if (v !== '') {
+                if (def.type === "int") nv[k] = parseInt(v);
+                else if (def.type === "float") nv[k] = parseFloat(v);
+                else nv[k] = v;
+            }
+        }
+    }
+    item.json = nv;
+    item.jsonRaw = JSON.stringify(nv).replace(/"/g, '\\"');
+    item.raw = [item.modid, item.id, item.xp, item.levelmin, item.levelmax, item.jsonRaw].join(":");
+    showItems(currentCategory);
+};
+
+window.addItemToCategory = function() {
+    if (!currentCategory) return;
+    if (!dataByCategory[currentCategory]) dataByCategory[currentCategory] = [];
+    dataByCategory[currentCategory].push({
+        modid: '', id: '', xp: '', levelmin: '', levelmax: '', json: {}, jsonRaw: '{}', raw: ''
+    });
+    showItems(currentCategory);
+};
+
+/** Génère la sortie TOML (chaque catégorie sur 1 seule ligne) */
+/** À la sauvegarde, on remet les commentaires juste avant la bonne catégorie */
+function buildToml() {
+    let lines = [];
+    lines.push("[Main]");
+    for (const cat of categories) {
+        if (commentsByCategory[cat]) {
+            lines.push(commentsByCategory[cat]);
+        }
+        const items = dataByCategory[cat].map(item =>
+            [item.modid, item.id, item.xp, item.levelmin, item.levelmax, item.jsonRaw].join(":")
+        ).join("; ");
+        lines.push(`\t"${cat}" = "${items}"`);
+    }
+    return lines.join("\n") + "\n";
+}
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        parseToml(e.target.result);
+        currentCategory = categories[0];
+        showCategories();
+        showItems(currentCategory);
+        document.getElementById('saveBtn').disabled = false;
+    };
+    reader.readAsText(file);
+});
+
+document.getElementById('saveBtn').addEventListener('click', function() {
+    const toml = buildToml();
+    const blob = new Blob([toml], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.getElementById('downloadLink');
+    a.href = url;
+    a.download = "Earning.toml";
+    a.classList.remove('hidden');
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+</script>
+</body>
+</html>
