@@ -1,3 +1,3 @@
 # SkyzerAdventureHtmlConstructor
 
-https://jlskyzer.github.io/SkyzerAdventureHtmlConstructor/EarningConstructor.html
+https://skyzeradventureconstructor.netlify.app/earningconstructor
