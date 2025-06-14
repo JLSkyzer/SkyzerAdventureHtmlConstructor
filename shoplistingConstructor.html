@@ -38,6 +38,8 @@
     <button class="tab-btn" id="sellTab" onclick="switchTab('sell')">💰 Sell Listing</button>
 </div>
 <div class="container" id="itemsContainer"></div>
+<input type="file" id="importTxt" accept=".txt" class="hidden">
+<button class="add-btn" onclick="document.getElementById('importTxt').click()">Importer depuis un fichier .txt</button>
 <button class="add-btn" onclick="addItem()">+ Ajouter un item</button>
 <button class="save-btn" id="saveBtn" disabled>💾 Sauvegarder le fichier</button>
 <a id="downloadLink" class="hidden"></a>
@@ -158,6 +160,24 @@ document.getElementById('saveBtn').addEventListener('click', function() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
+
+document.getElementById('importTxt').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const lines = e.target.result.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+        const arr = (activeTab === "buy") ? data.buy : data.sell;
+        for (const line of lines) {
+            let [modid, id, price] = line.split(":");
+            if (modid && id && price) arr.push({ modid, id, price });
+        }
+        showItems();
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+});
+
 </script>
 </body>
 </html>
