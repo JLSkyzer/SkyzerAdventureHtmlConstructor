@@ -98,7 +98,7 @@ function showItems() {
     arr.forEach((item, idx) => {
         html += `<tr class="item-row">
             <td><input type="text" value="${item.modid || ''}" onchange="editItem(${idx},'modid',this.value)" class="${!item.modid?'invalid':''}"></td>
-            <td><input type="text" value="${item.id || ''}" onchange="editItem(${idx}, 'id', this.value)" class="${!item.id?'invalid':''}"></td>
+            <td><input type="text" style="width:230px" value="${item.id || ''}" onchange="editItem(${idx}, 'id', this.value)" class="${!item.id?'invalid':''}"></td>
             <td><input type="number" step="0.0001" value="${item.price || ''}" onchange="editItem(${idx}, 'price', this.value)" class="${item.price===''||item.price===undefined||isNaN(Number(item.price))?'invalid':''}"></td>
             <td>
                 <button class="delete-btn" onclick="deleteItem(${idx})">🗑️</button>
